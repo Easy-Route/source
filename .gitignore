@@ -1,0 +1,38 @@
+# build outputs
+target/
+build/
+out/
+*.class
+*.jar
+!.mvn/wrapper/maven-wrapper.jar
+
+# IDE
+.idea/
+*.iml
+.vscode/
+.project
+.classpath
+.settings/
+
+# OS
+.DS_Store
+Thumbs.db
+
+# logs
+*.log
+logs/
+
+# local secrets / overrides
+.env
+.env.*
+application-local.yml
+application-local.yaml
+
+# docker / runtime
+flink-checkpoints/
+postgres-data/
+kafka-data/
+starrocks-data/
+
+# helm
+**/charts/*.tgz
