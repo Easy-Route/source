@@ -1,0 +1,7 @@
+#!/bin/sh
+# Apache Maven Wrapper startup batch script.
+set -e
+SCRIPT_DIR=$(cd "$(dirname "$0")" && pwd)
+WRAPPER_JAR="$SCRIPT_DIR/.mvn/wrapper/maven-wrapper.jar"
+WRAPPER_PROPERTIES="$SCRIPT_DIR/.mvn/wrapper/maven-wrapper.properties"
+exec java -jar "$WRAPPER_JAR" -Dmaven.multiModuleProjectDirectory="$SCRIPT_DIR" "$@"
