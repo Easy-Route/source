@@ -1,0 +1,153 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://dataflow.org/schemas/tract-spec.schema.json",
+  "title": "TractSpec",
+  "type": "object",
+  "required": ["apiVersion", "kind", "metadata", "spec"],
+  "properties": {
+    "apiVersion": {
+      "type": "string",
+      "enum": ["dataflow/v1"]
+    },
+    "kind": {
+      "type": "string",
+      "enum": ["Tract"]
+    },
+    "metadata": {
+      "type": "object",
+      "required": ["name"],
+      "properties": {
+        "name": {
+          "type": "string",
+          "pattern": "^[a-z][a-z0-9-]{2,63}$"
+        },
+        "labels": {
+          "type": "object",
+          "additionalProperties": {"type": "string"}
+        }
+      }
+    },
+    "spec": {
+      "type": "object",
+      "required": ["source", "sinks"],
+      "properties": {
+        "source": {
+          "type": "object",
+          "required": ["type", "connection", "publication"],
+          "properties": {
+            "type": {"type": "string", "enum": ["postgresql"]},
+            "connection": {
+              "type": "object",
+              "required": ["host", "port", "database", "user", "password"],
+              "properties": {
+                "host": {"type": "string"},
+                "port": {"type": "integer", "minimum": 1, "maximum": 65535},
+                "database": {"type": "string"},
+                "user": {"type": "string"},
+                "password": {"type": "string"}
+              }
+            },
+            "publication": {
+              "type": "object",
+              "required": ["name", "tables"],
+              "properties": {
+                "name": {"type": "string"},
+                "tables": {
+                  "type": "array",
+                  "minItems": 1,
+                  "items": {"type": "string", "pattern": "^[a-z_][a-z0-9_]*\\.[a-z_][a-z0-9_]*$"}
+                }
+              }
+            },
+            "snapshot": {
+              "type": "object",
+              "properties": {
+                "mode": {"type": "string", "enum": ["initial", "never", "when_needed"]}
+              }
+            }
+          }
+        },
+        "transformation": {
+          "type": "object",
+          "properties": {
+            "deduplication": {
+              "type": "object",
+              "required": ["key"],
+              "properties": {
+                "key": {"type": "string"},
+                "ttlHours": {"type": "integer", "minimum": 1, "maximum": 168}
+              }
+            },
+            "filter": {
+              "type": "object",
+              "properties": {
+                "excludeOperations": {
+                  "type": "array",
+                  "items": {"type": "string", "enum": ["INSERT", "UPDATE", "DELETE", "TRUNCATE", "DDL"]}
+                }
+              }
+            },
+            "timezone": {
+              "type": "object",
+              "required": ["from", "to"],
+              "properties": {
+                "from": {"type": "string"},
+                "to": {"type": "string"}
+              }
+            }
+          }
+        },
+        "sinks": {
+          "type": "array",
+          "minItems": 1,
+          "items": {
+            "type": "object",
+            "required": ["name", "type", "connection", "mapping"],
+            "properties": {
+              "name": {"type": "string", "pattern": "^[a-z][a-z0-9-]{2,63}$"},
+              "type": {"type": "string", "enum": ["starrocks"]},
+              "connection": {"type": "object", "additionalProperties": {"type": "string"}},
+              "mapping": {
+                "type": "object",
+                "properties": {
+                  "mode": {"type": "string", "enum": ["oneToOne"]},
+                  "primaryKeyModel": {"type": "boolean"}
+                }
+              }
+            }
+          }
+        },
+        "reliability": {
+          "type": "object",
+          "properties": {
+            "deliveryGuarantee": {"type": "string", "enum": ["atLeastOnce", "effectivelyOnce"]}
+          }
+        },
+        "dlq": {
+          "type": "object",
+          "properties": {
+            "enabled": {"type": "boolean"},
+            "retentionDays": {"type": "integer", "minimum": 1, "maximum": 365}
+          }
+        },
+        "observability": {
+          "type": "object",
+          "properties": {
+            "metrics": {
+              "type": "object",
+              "properties": {
+                "enabled": {"type": "boolean"}
+              }
+            }
+          }
+        },
+        "lineage": {
+          "type": "object",
+          "properties": {
+            "preserveSourceMetadata": {"type": "boolean"}
+          }
+        }
+      }
+    }
+  }
+}
