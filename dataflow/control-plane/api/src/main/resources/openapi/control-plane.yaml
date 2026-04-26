@@ -1,0 +1,186 @@
+openapi: 3.0.3
+info:
+  title: Dataflow Control Plane API
+  version: 1.0.0
+  description: |
+    REST-интерфейс системы управления трактами передачи потоков
+    бизнес-данных. Соответствует подразделу 3.3 ВКР.
+servers:
+  - url: http://control-plane:8080
+paths:
+  /api/v1/sources:
+    get:
+      tags: [Sources]
+      summary: Перечень источников
+      responses:
+        '200':
+          description: OK
+  /api/v1/sources/{name}:
+    post:
+      tags: [Sources]
+      summary: Регистрация источника
+      parameters:
+        - in: path
+          name: name
+          required: true
+          schema: {type: string}
+      responses:
+        '201': {description: Created}
+    delete:
+      tags: [Sources]
+      summary: Удаление источника
+      parameters:
+        - in: path
+          name: name
+          required: true
+          schema: {type: string}
+      responses:
+        '204': {description: No Content}
+        '409': {description: Источник используется трактами}
+  /api/v1/tracts:
+    get:
+      tags: [Tracts]
+      summary: Перечень всех трактов
+      responses:
+        '200': {description: OK}
+    post:
+      tags: [Tracts]
+      summary: Создание тракта по спецификации
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [document]
+              properties:
+                document: {type: string, description: YAML тракта}
+      responses:
+        '201': {description: Created}
+        '422': {description: Spec validation failed}
+  /api/v1/tracts/{name}:
+    get:
+      tags: [Tracts]
+      parameters:
+        - {in: path, name: name, required: true, schema: {type: string}}
+      responses:
+        '200': {description: OK}
+        '404': {description: Not Found}
+    put:
+      tags: [Tracts]
+      summary: Обновление спецификации
+      parameters:
+        - {in: path, name: name, required: true, schema: {type: string}}
+        - {in: query, name: allowRestart, schema: {type: boolean, default: false}}
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/SpecRequest'
+      responses:
+        '200': {description: OK}
+        '409': {description: Restart required}
+        '422': {description: Validation failed or recreate required}
+    delete:
+      tags: [Tracts]
+      parameters:
+        - {in: path, name: name, required: true, schema: {type: string}}
+      responses:
+        '204': {description: No Content}
+  /api/v1/tracts/{name}/deploy:
+    post:
+      tags: [Lifecycle]
+      summary: Перевести тракт в желаемое состояние Deployed
+      parameters:
+        - {in: path, name: name, required: true, schema: {type: string}}
+      responses:
+        '200': {description: команда принята; тракт уже в Deployed}
+        '202': {description: команда принята; начато согласование}
+        '409': {description: переход недопустим из текущего состояния}
+  /api/v1/tracts/{name}/suspend:
+    post:
+      tags: [Lifecycle]
+      parameters:
+        - {in: path, name: name, required: true, schema: {type: string}}
+      responses:
+        '202': {description: Accepted}
+        '409': {description: Conflict}
+  /api/v1/tracts/{name}/resume:
+    post:
+      tags: [Lifecycle]
+      parameters:
+        - {in: path, name: name, required: true, schema: {type: string}}
+      responses:
+        '202': {description: Accepted}
+        '409': {description: Conflict}
+  /api/v1/tracts/{name}/status:
+    get:
+      tags: [Status]
+      summary: Получить наблюдаемое состояние тракта
+      parameters:
+        - {in: path, name: name, required: true, schema: {type: string}}
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TractStatus'
+  /api/v1/tracts/{name}/events:
+    get:
+      tags: [Status]
+      parameters:
+        - {in: path, name: name, required: true, schema: {type: string}}
+        - {in: query, name: limit, schema: {type: integer, default: 100}}
+      responses:
+        '200': {description: OK}
+  /api/v1/tracts/{name}/dlq:
+    get:
+      tags: [Status]
+      parameters:
+        - {in: path, name: name, required: true, schema: {type: string}}
+        - {in: query, name: limit, schema: {type: integer, default: 100}}
+      responses:
+        '200': {description: OK}
+components:
+  schemas:
+    SpecRequest:
+      type: object
+      required: [document]
+      properties:
+        document: {type: string}
+    TractStatus:
+      type: object
+      properties:
+        desiredState:
+          type: string
+          enum: [Drafted, Deployed, Suspended, Deleted, Failed]
+        reconciliationStatus:
+          type: string
+          enum: [Reconciled, Reconciling, Drift, Stuck]
+        components:
+          type: object
+          properties:
+            connector: {$ref: '#/components/schemas/ComponentStatus'}
+            topics:
+              type: array
+              items: {$ref: '#/components/schemas/TopicStatus'}
+            flinkJob: {$ref: '#/components/schemas/ComponentStatus'}
+            sinks:
+              type: array
+              items: {$ref: '#/components/schemas/ComponentStatus'}
+        observedAt: {type: string, format: date-time}
+    ComponentStatus:
+      type: object
+      properties:
+        kind: {type: string}
+        id: {type: string}
+        health: {type: string, enum: [UNKNOWN, PENDING, RUNNING, PAUSED, DEGRADED, FAILED, GONE]}
+    TopicStatus:
+      type: object
+      properties:
+        name: {type: string}
+        partitions: {type: integer}
+        replicationFactor: {type: integer}
+        health: {type: string}
