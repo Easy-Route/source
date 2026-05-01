@@ -4,6 +4,7 @@ import org.apache.flink.api.common.eventtime.WatermarkStrategy;
 import org.apache.flink.api.java.utils.ParameterTool;
 import org.apache.flink.contrib.streaming.state.EmbeddedRocksDBStateBackend;
 import org.apache.flink.streaming.api.datastream.DataStream;
+import org.apache.flink.streaming.api.datastream.SingleOutputStreamOperator;
 import org.apache.flink.streaming.api.environment.CheckpointConfig;
 import org.apache.flink.streaming.api.environment.StreamExecutionEnvironment;
 import org.dataflow.flink.config.ConfigLoader;
@@ -12,6 +13,9 @@ import org.dataflow.flink.event.CdcEvent;
 import org.dataflow.flink.operators.DeduplicationFunction;
 import org.dataflow.flink.operators.OperationFilter;
 import org.dataflow.flink.operators.TimezoneTransform;
+import org.dataflow.flink.sink.DlqRouter;
+import org.dataflow.flink.sink.PoisonGuard;
+import org.dataflow.flink.sink.SinkRouter;
 import org.dataflow.flink.source.KafkaSourceFactory;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -35,9 +39,7 @@ public class FlinkWorkerJob {
 
         StreamExecutionEnvironment env = StreamExecutionEnvironment.getExecutionEnvironment();
         env.setParallelism(params.getInt("parallelism", 2));
-
-        EmbeddedRocksDBStateBackend rocks = new EmbeddedRocksDBStateBackend(true);
-        env.setStateBackend(rocks);
+        env.setStateBackend(new EmbeddedRocksDBStateBackend(true));
         env.getCheckpointConfig().setCheckpointStorage(
                 params.get("checkpoint-storage", "file:///flink-checkpoints"));
         env.enableCheckpointing(params.getLong("checkpoint-interval-ms", 30_000L));
@@ -76,8 +78,14 @@ public class FlinkWorkerJob {
         DataStream<CdcEvent> normalized = filtered.map(new TimezoneTransform(fromTz, toTz))
                 .name("tz-" + tractName);
 
-        // Sinks land in the next commit.
-        normalized.print("normalized-" + tractName);
+        SingleOutputStreamOperator<CdcEvent> guarded = normalized
+                .process(new PoisonGuard())
+                .name("poison-guard-" + tractName);
+
+        DlqRouter.route(guarded.getSideOutput(DlqRouter.DLQ_TAG),
+                "dlq." + tractName, bootstrap);
+
+        SinkRouter.wireSinks(guarded, cfg);
 
         env.execute("dataflow-tract-" + tractName);
     }
