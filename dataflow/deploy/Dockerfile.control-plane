@@ -1,0 +1,11 @@
+FROM eclipse-temurin:17-jdk-alpine AS build
+WORKDIR /workspace
+COPY . .
+RUN ./mvnw -B -ntp -DskipTests package
+
+FROM eclipse-temurin:17-jre-alpine
+LABEL org.opencontainers.image.title="dataflow-control-plane"
+WORKDIR /app
+COPY --from=build /workspace/bootstrap/target/control-plane.jar /app/control-plane.jar
+EXPOSE 8080
+ENTRYPOINT ["java", "-XX:+UseG1GC", "-jar", "/app/control-plane.jar"]

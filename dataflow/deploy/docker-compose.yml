@@ -1,0 +1,219 @@
+# Полный стек локального стенда. Поднимает control-plane и весь
+# управляемый им data-plane (Kafka, Kafka Connect + Debezium, Flink,
+# StarRocks), отдельный PostgreSQL для метаданных, отдельный
+# PostgreSQL-источник для CDC, плюс Prometheus и Grafana.
+
+services:
+  postgres-meta:
+    image: postgres:16-alpine
+    container_name: dataflow-postgres-meta
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: dataflow
+      POSTGRES_USER: dataflow
+      POSTGRES_PASSWORD: dataflow
+    volumes:
+      - postgres-meta:/var/lib/postgresql/data
+    ports:
+      - "5433:5432"
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U dataflow -d dataflow"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+
+  postgres-source:
+    image: postgres:16-alpine
+    container_name: dataflow-postgres-source
+    restart: unless-stopped
+    command:
+      - "postgres"
+      - "-c"
+      - "wal_level=logical"
+      - "-c"
+      - "max_replication_slots=8"
+      - "-c"
+      - "max_wal_senders=8"
+    environment:
+      POSTGRES_DB: shop
+      POSTGRES_USER: dataflow_cdc
+      POSTGRES_PASSWORD: dataflow_cdc
+    volumes:
+      - postgres-source:/var/lib/postgresql/data
+      - ./demo/pg-init.sql:/docker-entrypoint-initdb.d/01-pg-init.sql:ro
+    ports:
+      - "5432:5432"
+
+  kafka:
+    image: confluentinc/cp-kafka:7.6.1
+    container_name: dataflow-kafka
+    restart: unless-stopped
+    environment:
+      CLUSTER_ID: dataflow-kafka-cluster
+      KAFKA_NODE_ID: 1
+      KAFKA_PROCESS_ROLES: broker,controller
+      KAFKA_LISTENERS: PLAINTEXT://:9092,CONTROLLER://:9093,EXTERNAL://:9094
+      KAFKA_ADVERTISED_LISTENERS: PLAINTEXT://kafka:9092,EXTERNAL://localhost:9094
+      KAFKA_LISTENER_SECURITY_PROTOCOL_MAP: PLAINTEXT:PLAINTEXT,CONTROLLER:PLAINTEXT,EXTERNAL:PLAINTEXT
+      KAFKA_INTER_BROKER_LISTENER_NAME: PLAINTEXT
+      KAFKA_CONTROLLER_QUORUM_VOTERS: 1@kafka:9093
+      KAFKA_CONTROLLER_LISTENER_NAMES: CONTROLLER
+      KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: 1
+      KAFKA_TRANSACTION_STATE_LOG_REPLICATION_FACTOR: 1
+      KAFKA_TRANSACTION_STATE_LOG_MIN_ISR: 1
+      KAFKA_AUTO_CREATE_TOPICS_ENABLE: "false"
+    volumes:
+      - kafka-data:/var/lib/kafka/data
+    ports:
+      - "9094:9094"
+
+  kafka-connect:
+    image: debezium/connect:2.6.2.Final
+    container_name: dataflow-kafka-connect
+    restart: unless-stopped
+    depends_on: [kafka]
+    environment:
+      BOOTSTRAP_SERVERS: kafka:9092
+      GROUP_ID: dataflow-connect
+      CONFIG_STORAGE_TOPIC: _connect_configs
+      OFFSET_STORAGE_TOPIC: _connect_offsets
+      STATUS_STORAGE_TOPIC: _connect_status
+      CONFIG_STORAGE_REPLICATION_FACTOR: 1
+      OFFSET_STORAGE_REPLICATION_FACTOR: 1
+      STATUS_STORAGE_REPLICATION_FACTOR: 1
+      KEY_CONVERTER: org.apache.kafka.connect.json.JsonConverter
+      VALUE_CONVERTER: org.apache.kafka.connect.json.JsonConverter
+      KEY_CONVERTER_SCHEMAS_ENABLE: "false"
+      VALUE_CONVERTER_SCHEMAS_ENABLE: "false"
+    ports:
+      - "8083:8083"
+
+  flink-jobmanager:
+    image: apache/flink:1.18.1-scala_2.12-java17
+    container_name: dataflow-flink-jobmanager
+    restart: unless-stopped
+    command: jobmanager
+    environment:
+      FLINK_PROPERTIES: |
+        jobmanager.rpc.address: flink-jobmanager
+        rest.address: flink-jobmanager
+        rest.port: 8081
+        parallelism.default: 2
+        state.backend: rocksdb
+        state.checkpoints.dir: file:///flink-checkpoints
+        state.savepoints.dir: file:///flink-checkpoints
+        execution.checkpointing.interval: 30s
+    volumes:
+      - flink-checkpoints:/flink-checkpoints
+      - flink-usrlib:/opt/flink/usrlib
+      - flink-conf-tracts:/opt/flink/conf/tracts
+    ports:
+      - "8081:8081"
+
+  flink-taskmanager:
+    image: apache/flink:1.18.1-scala_2.12-java17
+    container_name: dataflow-flink-taskmanager
+    restart: unless-stopped
+    depends_on: [flink-jobmanager]
+    command: taskmanager
+    environment:
+      FLINK_PROPERTIES: |
+        jobmanager.rpc.address: flink-jobmanager
+        taskmanager.numberOfTaskSlots: 4
+        state.backend: rocksdb
+        state.checkpoints.dir: file:///flink-checkpoints
+    deploy:
+      replicas: 2
+    volumes:
+      - flink-checkpoints:/flink-checkpoints
+      - flink-usrlib:/opt/flink/usrlib
+      - flink-conf-tracts:/opt/flink/conf/tracts
+
+  starrocks-fe:
+    image: starrocks/fe-ubuntu:3.2.6
+    container_name: dataflow-starrocks-fe
+    restart: unless-stopped
+    environment:
+      HOST_TYPE: FQDN
+    volumes:
+      - starrocks-fe:/opt/starrocks/fe/meta
+      - ./demo/starrocks-init.sql:/docker-entrypoint-initdb.d/01-starrocks-init.sql:ro
+    ports:
+      - "8030:8030"
+      - "9030:9030"
+
+  starrocks-be:
+    image: starrocks/be-ubuntu:3.2.6
+    container_name: dataflow-starrocks-be
+    restart: unless-stopped
+    depends_on: [starrocks-fe]
+    environment:
+      HOST_TYPE: FQDN
+      FE_SERVERS: starrocks-fe:9010
+    volumes:
+      - starrocks-be:/opt/starrocks/be/storage
+
+  control-plane:
+    build:
+      context: ../control-plane
+      dockerfile: ../deploy/Dockerfile.control-plane
+    image: dataflow/control-plane:1.0.0-SNAPSHOT
+    container_name: dataflow-control-plane
+    restart: unless-stopped
+    depends_on:
+      postgres-meta:
+        condition: service_healthy
+      kafka: {condition: service_started}
+      kafka-connect: {condition: service_started}
+      flink-jobmanager: {condition: service_started}
+    environment:
+      DB_HOST: postgres-meta
+      DB_NAME: dataflow
+      DB_USER: dataflow
+      DB_PASSWORD: dataflow
+      KAFKA_BOOTSTRAP: kafka:9092
+      CONNECT_URL: http://kafka-connect:8083
+      FLINK_URL: http://flink-jobmanager:8081
+      FLINK_WORKER_JAR: /opt/flink/usrlib/flink-worker.jar
+      STARROCKS_USER: root
+      STARROCKS_PASSWORD: ""
+      ADMIN_USER: admin
+      ADMIN_PASSWORD: admin
+    volumes:
+      - flink-usrlib:/opt/flink/usrlib
+      - flink-conf-tracts:/opt/flink/conf/tracts
+    ports:
+      - "8080:8080"
+
+  prometheus:
+    image: prom/prometheus:v2.52.0
+    container_name: dataflow-prometheus
+    restart: unless-stopped
+    volumes:
+      - ./prometheus.yml:/etc/prometheus/prometheus.yml:ro
+      - prometheus-data:/prometheus
+    ports:
+      - "9090:9090"
+
+  grafana:
+    image: grafana/grafana:10.4.4
+    container_name: dataflow-grafana
+    restart: unless-stopped
+    environment:
+      GF_SECURITY_ADMIN_PASSWORD: admin
+    volumes:
+      - grafana-data:/var/lib/grafana
+    ports:
+      - "3000:3000"
+
+volumes:
+  postgres-meta:
+  postgres-source:
+  kafka-data:
+  flink-checkpoints:
+  flink-usrlib:
+  flink-conf-tracts:
+  starrocks-fe:
+  starrocks-be:
+  prometheus-data:
+  grafana-data:

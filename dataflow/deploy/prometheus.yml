@@ -1,0 +1,23 @@
+global:
+  scrape_interval: 15s
+  evaluation_interval: 30s
+
+scrape_configs:
+  - job_name: control-plane
+    metrics_path: /actuator/prometheus
+    static_configs:
+      - targets: ["control-plane:8080"]
+
+  - job_name: kafka
+    static_configs:
+      - targets: ["kafka:7071"]
+
+  - job_name: flink-jobmanager
+    metrics_path: /
+    static_configs:
+      - targets: ["flink-jobmanager:9249"]
+
+  - job_name: flink-taskmanager
+    metrics_path: /
+    static_configs:
+      - targets: ["flink-taskmanager:9249"]
