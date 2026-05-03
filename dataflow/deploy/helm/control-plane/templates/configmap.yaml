@@ -1,0 +1,38 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ include "control-plane.fullname" . }}
+  labels:
+    {{- include "control-plane.labels" . | nindent 4 }}
+data:
+  application.yml: |
+    server:
+      port: 8080
+    spring:
+      datasource:
+        url: jdbc:postgresql://{{ .Values.metadataDb.host }}:{{ .Values.metadataDb.port }}/{{ .Values.metadataDb.database }}
+    management:
+      endpoints:
+        web:
+          exposure:
+            include: health,info,prometheus,metrics
+    dataflow:
+      reconciler:
+        period: {{ .Values.dataflow.reconciler.period }}
+        stuck-after: {{ .Values.dataflow.reconciler.stuckAfter }}
+        max-attempts: {{ .Values.dataflow.reconciler.maxAttempts }}
+      observer:
+        flink-probe-interval: {{ .Values.dataflow.observer.flinkProbeInterval }}
+        connector-probe-interval: {{ .Values.dataflow.observer.connectorProbeInterval }}
+        topic-probe-interval: {{ .Values.dataflow.observer.topicProbeInterval }}
+        sink-probe-interval: {{ .Values.dataflow.observer.sinkProbeInterval }}
+      kafka:
+        bootstrap-servers: {{ .Values.kafka.bootstrapServers }}
+        security-protocol: {{ .Values.kafka.securityProtocol }}
+      connect:
+        url: {{ .Values.connect.url }}
+      flink:
+        url: {{ .Values.flink.url }}
+        worker-jar-path: {{ .Values.flink.workerJarPath }}
+        worker-entry-class: {{ .Values.flink.workerEntryClass }}
+        checkpoint-storage: {{ .Values.flink.checkpointStorage }}

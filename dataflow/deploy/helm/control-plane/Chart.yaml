@@ -1,0 +1,17 @@
+apiVersion: v2
+name: dataflow-control-plane
+description: Dataflow Control Plane — система управления near real-time трактами передачи данных
+type: application
+version: 1.0.0
+appVersion: "1.0.0"
+icon: https://example.org/dataflow.png
+home: https://example.org/dataflow
+maintainers:
+  - name: Dataflow team
+keywords:
+  - dataflow
+  - cdc
+  - debezium
+  - flink
+  - kafka
+  - starrocks

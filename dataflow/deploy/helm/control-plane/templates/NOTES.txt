@@ -1,0 +1,12 @@
+Dataflow Control Plane установлен в namespace {{ .Release.Namespace }}.
+
+Получить URL сервиса (port-forward):
+  kubectl port-forward svc/{{ include "control-plane.fullname" . }} 8080:{{ .Values.service.port }} -n {{ .Release.Namespace }}
+
+REST API будет доступен по адресу http://localhost:8080.
+Документация OpenAPI: http://localhost:8080/swagger-ui
+
+Перед регистрацией первого тракта необходимо:
+  1. Создать секрет {{ .Values.metadataDb.existingSecret }} с ключами {{ .Values.metadataDb.secretKeys.user }} и {{ .Values.metadataDb.secretKeys.password }};
+  2. Создать секрет {{ .Values.security.admin.existingSecret }} с переменными окружения ADMIN_USER и ADMIN_PASSWORD;
+  3. Поднять flink-worker.jar в общий volume Flink-кластера (см. подраздел 3.5.5 ВКР).

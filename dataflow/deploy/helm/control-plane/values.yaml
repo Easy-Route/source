@@ -1,0 +1,103 @@
+replicaCount: 1
+
+image:
+  repository: dataflow/control-plane
+  tag: 1.0.0-SNAPSHOT
+  pullPolicy: IfNotPresent
+
+imagePullSecrets: []
+
+nameOverride: ""
+fullnameOverride: ""
+
+service:
+  type: ClusterIP
+  port: 8080
+
+ingress:
+  enabled: false
+  className: ""
+  hosts: []
+
+resources:
+  requests:
+    cpu: "200m"
+    memory: "512Mi"
+  limits:
+    cpu: "2"
+    memory: "2Gi"
+
+autoscaling:
+  enabled: false
+  minReplicas: 1
+  maxReplicas: 3
+  targetCPUUtilizationPercentage: 70
+
+podSecurityContext:
+  fsGroup: 65532
+securityContext:
+  runAsNonRoot: true
+  runAsUser: 65532
+  readOnlyRootFilesystem: true
+  capabilities:
+    drop: ["ALL"]
+
+dataflow:
+  reconciler:
+    period: PT10S
+    stuckAfter: PT10M
+    maxAttempts: 5
+  observer:
+    flinkProbeInterval: PT10S
+    connectorProbeInterval: PT15S
+    topicProbeInterval: PT30S
+    sinkProbeInterval: PT30S
+
+# Координаты внешне развёрнутых компонентов data-plane
+metadataDb:
+  host: "postgres-meta"
+  port: 5432
+  database: "dataflow"
+  existingSecret: "dataflow-control-plane-db"
+  secretKeys:
+    user: "username"
+    password: "password"
+
+kafka:
+  bootstrapServers: "kafka:9092"
+  securityProtocol: PLAINTEXT
+  saslMechanism: ""
+  existingSecret: ""
+
+connect:
+  url: "http://kafka-connect:8083"
+
+flink:
+  url: "http://flink-jobmanager:8081"
+  workerJarPath: "/opt/flink/usrlib/flink-worker.jar"
+  workerEntryClass: "org.dataflow.flink.FlinkWorkerJob"
+  checkpointStorage: "file:///flink-checkpoints"
+
+starrocks:
+  user: "root"
+  existingSecret: ""
+
+security:
+  admin:
+    user: "admin"
+    existingSecret: "dataflow-control-plane-admin"
+
+serviceMonitor:
+  enabled: false
+  interval: 30s
+  scrapeTimeout: 10s
+
+probes:
+  liveness:
+    path: /actuator/health/liveness
+    initialDelaySeconds: 30
+    periodSeconds: 10
+  readiness:
+    path: /actuator/health/readiness
+    initialDelaySeconds: 10
+    periodSeconds: 5
