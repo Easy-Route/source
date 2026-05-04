@@ -1,0 +1,56 @@
+apiVersion: dataflow/v1
+kind: Tract
+metadata:
+  name: shop-postgres-to-starrocks
+  labels:
+    domain: ecommerce
+    environment: production
+spec:
+  source:
+    type: postgresql
+    connection:
+      host: postgres-source
+      port: 5432
+      database: shop
+      user: ${secret:cdc-user}
+      password: ${secret:cdc-password}
+    publication:
+      name: shop_pub
+      tables:
+        - public.customers
+        - public.orders
+        - public.order_items
+        - public.products
+    snapshot:
+      mode: initial
+  transformation:
+    deduplication:
+      key: source.lsn
+      ttlHours: 24
+    filter:
+      excludeOperations: [TRUNCATE]
+    timezone:
+      from: UTC
+      to: Europe/Moscow
+  sinks:
+    - name: starrocks-main
+      type: starrocks
+      connection:
+        feHost: starrocks-fe
+        fePort: "8030"
+        database: shop_dwh
+        user: ${secret:sr-user}
+        password: ${secret:sr-password}
+      mapping:
+        mode: oneToOne
+        primaryKeyModel: true
+  reliability:
+    deliveryGuarantee: effectivelyOnce
+  dlq:
+    enabled: true
+    retentionDays: 14
+  observability:
+    metrics:
+      enabled: true
+  lineage:
+    preserveSourceMetadata: true

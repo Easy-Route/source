@@ -1,0 +1,22 @@
+{
+  "type": "postgresql",
+  "connection": {
+    "host": "postgres-source",
+    "port": 5432,
+    "database": "shop",
+    "user": "dataflow_cdc",
+    "password": "dataflow_cdc"
+  },
+  "publication": {
+    "name": "shop_pub",
+    "tables": [
+      "public.customers",
+      "public.orders",
+      "public.order_items",
+      "public.products"
+    ]
+  },
+  "snapshot": {
+    "mode": "INITIAL"
+  }
+}
